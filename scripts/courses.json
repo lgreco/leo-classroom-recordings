@@ -2,19 +2,19 @@
   "comp170": {
     "folder": "comp170f26",
     "name": "COMP 170 Introduction to Programming with Python",
-    "description": "An introductory college programming course covering Python fundamentals: variables, control flow, functions, basic data structures, and simple program design. Assume a novice audience.",
+    "description": "An introductory college programming course in Python, for students with little to no prior coding experience. Deliberately avoids heavy technical terminology, framing programming as problem-solving and common sense rather than jargon. Covers variables, control flow, functions, and basic data structures. The concept of an object -- essentially, a program bundled with its own data -- is introduced only near the end of the term.",
     "email_list": "comp170f26/comp170-emails.txt"
   },
   "comp271": {
     "folder": "comp271f26",
     "name": "COMP 271 Linear Data Structures",
-    "description": "A sophomore-level course on linear data structures (arrays, linked lists, stacks, queues) and their implementation and analysis, typically in Java or C++.",
+    "description": "The course that follows COMP 170, in Python. It serves two purposes: first, to reinforce and advance the programming skills built in COMP 170; second, to work through basic algorithms for linear data structures such as dynamic arrays and linked lists. Because Python lists are already dynamically sized, arrays are deliberately treated as fixed-size in this course so students can learn how resizing actually works -- allocating a new array and moving contents over from the old one. The course also explores objects in more depth: design, field privacy, an exposed interface, abstract classes, and inheritance. Basic sorting (mergesort) is used as an entry point into discussing Big-Theta asymptotic behavior in general terms. Terminology grows more advanced than COMP 170, but the course still frames programming as problem-solving via common sense.",
     "email_list": "comp271f26/comp271-emails.txt"
   },
   "comp363": {
     "folder": "comp363f26",
     "name": "COMP 363 Design and Analysis of Algorithms",
-    "description": "An upper-level course on algorithm design and analysis: asymptotic complexity, divide-and-conquer, dynamic programming, greedy algorithms, and graph algorithms.",
+    "description": "A more quantitatively oriented course in algorithm design and analysis. Topics include the Master Theorem for analyzing divide-and-conquer recurrences, graph algorithms and their Big-Theta behavior, dynamic programming, min-cut/max-flow, numerical methods and simulations, basic backpropagation, and predictive analytics applied to real-world datasets (e.g. sports data, police data).",
     "email_list": "comp363f26/comp363-emails.txt"
   }
 }
