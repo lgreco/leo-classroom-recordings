@@ -1,0 +1,67 @@
+name: Sync Public Mirror
+
+# Keeps github.com/lgreco/leo-classroom-recordings (public, read-only) in
+# sync with the code and AI prompts here, for student-facing transparency
+# -- see PUBLIC_README.md for what that repo is and isn't.
+#
+# Deliberately an explicit ALLOWLIST of files/dirs, copied one by one in
+# the "Copy allowlisted files" step below -- not a wildcard sync of the
+# whole tree. That's the actual safety mechanism here: student rosters
+# (comp*f26/*-emails.txt), recordings/transcripts/summaries, and planning
+# docs with infrastructure details (next_checklist.md, planning_*.md) are
+# never even considered for copying, regardless of what gets added to
+# this repo in the future. Extending what's mirrored means deliberately
+# adding a new line below, not something that happens by accident.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/*.py"
+      - "scripts/courses.json"
+      - "scripts/requirements.txt"
+      - ".github/workflows/*.yml"
+      - ".gitattributes"
+      - "PUBLIC_README.md"
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout private repo
+        uses: actions/checkout@v4
+
+      - name: Checkout public mirror
+        uses: actions/checkout@v4
+        with:
+          repository: lgreco/leo-classroom-recordings
+          token: ${{ secrets.PUBLIC_MIRROR_TOKEN }}
+          path: public-mirror
+
+      - name: Copy allowlisted files into the mirror
+        run: |
+          set -euo pipefail
+          mkdir -p public-mirror/scripts public-mirror/.github/workflows
+          cp scripts/*.py public-mirror/scripts/
+          cp scripts/courses.json public-mirror/scripts/
+          cp scripts/requirements.txt public-mirror/scripts/
+          cp .github/workflows/*.yml public-mirror/.github/workflows/
+          cp .gitattributes public-mirror/.gitattributes
+          cp PUBLIC_README.md public-mirror/README.md
+
+      - name: Commit and push if changed
+        working-directory: public-mirror
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No mirrored files changed -- nothing to sync."
+            exit 0
+          fi
+          git commit -m "Sync from private repo @ ${{ github.sha }}"
+          git push
