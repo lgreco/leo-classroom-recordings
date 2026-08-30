@@ -41,8 +41,11 @@ to run the pipeline as-is — it's for reading, not deploying.
 - `scripts/cleanup_old_recordings.py` — the weekly recording-cleanup job.
 - `scripts/courses.json` — course names/descriptions used as context for
   the summarizer (no student data).
-- `.github/workflows/` — the GitHub Actions workflows that run all of the
-  above.
+- `workflows-for-review/` — the GitHub Actions workflow definitions that
+  run all of the above in the private repo. Kept out of `.github/workflows/`
+  here on purpose: GitHub treats any file at that exact path as a live,
+  executable workflow in whatever repo it's in, and this repo is read-only
+  by design — these run for real only in the private production repo.
 
 ## Questions
 

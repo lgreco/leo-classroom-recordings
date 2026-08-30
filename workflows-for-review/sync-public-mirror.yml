@@ -44,11 +44,20 @@ jobs:
       - name: Copy allowlisted files into the mirror
         run: |
           set -euo pipefail
-          mkdir -p public-mirror/scripts public-mirror/.github/workflows
+          mkdir -p public-mirror/scripts public-mirror/workflows-for-review
           cp scripts/*.py public-mirror/scripts/
           cp scripts/courses.json public-mirror/scripts/
           cp scripts/requirements.txt public-mirror/scripts/
-          cp .github/workflows/*.yml public-mirror/.github/workflows/
+          # Deliberately NOT copied to .github/workflows/ in the mirror --
+          # GitHub treats any file literally at that path as a live,
+          # executable Actions workflow in whatever repo it sits in.
+          # These already ran for real inside the public repo once
+          # (harmlessly for process-lecture.yml, which found nothing to
+          # process; failing loudly for this workflow itself, since
+          # PUBLIC_MIRROR_TOKEN only exists as a private-repo secret).
+          # workflows-for-review/ is a plain, inert directory: fully
+          # readable, never executable.
+          cp .github/workflows/*.yml public-mirror/workflows-for-review/
           cp .gitattributes public-mirror/.gitattributes
           cp PUBLIC_README.md public-mirror/README.md
 
