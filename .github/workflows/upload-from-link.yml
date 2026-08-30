@@ -1,0 +1,92 @@
+name: Upload Lecture From Link
+
+# Manually-triggered alternative to dropping a file in the repo root via
+# `git push` or GitHub's web upload. Exists specifically for the
+# straight-out-of-class-with-only-a-phone case: GitHub's own "Upload
+# files" web page doesn't reliably produce a valid Git LFS pointer for a
+# file this size (confirmed the hard way -- see next_checklist.md), but
+# every phone already has some way to get a file into a shareable cloud
+# link (Google Drive, etc.), and *that* a plain mobile browser can do
+# through this workflow's "Run workflow" form -- no file upload, no app
+# install, just pasting a link.
+on:
+  workflow_dispatch:
+    inputs:
+      course_code:
+        description: "Course"
+        type: choice
+        options:
+          - comp170
+          - comp271
+          - comp363
+        required: true
+      audio_url:
+        description: "Shareable link to the recording (e.g. Google Drive, set to \"Anyone with the link\")"
+        type: string
+        required: true
+      extension:
+        description: "Audio format"
+        type: choice
+        options:
+          - m4a
+          - mp3
+          - wav
+          - aac
+          - flac
+          - ogg
+        default: m4a
+        required: true
+
+permissions:
+  contents: write
+
+# Same concurrency group as process-lecture.yml on purpose: both push
+# straight to main, so if an upload and an in-progress lecture-processing
+# run ever overlapped, they'd race on that push. Sharing the group makes
+# GitHub queue them instead.
+concurrency:
+  group: process-lecture
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install downloader dependencies
+        run: pip install gdown
+
+      - name: Download recording from link
+        env:
+          AUDIO_URL: ${{ inputs.audio_url }}
+          COURSE_CODE: ${{ inputs.course_code }}
+          EXTENSION: ${{ inputs.extension }}
+        run: |
+          set -euo pipefail
+          python scripts/download_from_link.py "$AUDIO_URL" "$COURSE_CODE.$EXTENSION"
+
+      - name: Commit and push recording
+        env:
+          COURSE_CODE: ${{ inputs.course_code }}
+          EXTENSION: ${{ inputs.extension }}
+        run: |
+          set -euo pipefail
+          git add "$COURSE_CODE.$EXTENSION"
+          git commit -m "Upload $COURSE_CODE recording via link"
+          git push

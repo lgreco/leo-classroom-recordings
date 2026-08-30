@@ -1,0 +1,151 @@
+"""Send a lecture summary to a course's student list via Gmail SMTP.
+
+Sends as GMAIL_ADDRESS by default. A second set of credentials
+(GMAIL_WORKSPACE_ADDRESS / GMAIL_WORKSPACE_APP_PASSWORD) can be wired in
+later for leo@cs.luc.edu once that Workspace account's App Password /
+sending setup is confirmed with IT — see README.md for why this isn't
+done by simply overriding the From header.
+
+Quick note on that last point, since it's easy to forget why: I
+originally considered just setting the `From` header to
+leo@cs.luc.edu while still authenticating to Gmail's SMTP server as
+lgreco@gmail.com. That would technically "work" in the sense that the
+email would go out, but it would get DKIM-signed under Gmail's domain
+while claiming to be From a different domain — and Loyola's mail
+servers (like most university domains) publish a DMARC policy that
+would likely flag or bounce that mismatch. So sending as
+leo@cs.luc.edu properly requires either a real Workspace App Password
+for that account, or IT setting up domain alignment — not a header
+trick. That's why sender credentials are passed into this module as
+parameters instead of being hardcoded to one address: it leaves room
+to plug in a second, properly-authenticated identity later without
+rewriting this file.
+"""
+
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+import markdown
+
+SMTP_HOST = "smtp.gmail.com"
+SMTP_PORT = 587
+
+# Appended to every summary email — a student replying to ask a question
+# is exactly the outcome we want, so say so explicitly rather than just
+# relying on the Reply-To header to be self-explanatory.
+CLOSING_NOTE = "If you have any questions, please reach out to me."
+
+# My usual Gmail signature block, pasted in as decoded HTML (Gmail exports
+# it quoted-printable-encoded, e.g. "=3D" for "=" and line-continuation
+# "=" at 76 columns — decoded once here so this file just has plain HTML,
+# not an artifact of how Gmail happened to encode it on export).
+SIGNATURE_HTML = '''<div dir="ltr"><div><br clear="all"></div><div><div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature"><div dir="ltr"><blockquote style="margin:0 0 0 40px;border:none;padding:0px"><font size="4" face="times new roman, serif"><font color="#9900ff">Leo </font><font color="#666666">Irakliotis</font></font></blockquote><blockquote style="margin:0 0 0 40px;border:none;padding:0px"><font color="#666666">Department of <b>Computer Science</b></font><b><font color="#000000"> | </font></b><font color="#666666"><b>Loyola</b> University Chicago</font><br><blockquote style="margin:0px 0px 0px 40px;border:none;padding:0px"></blockquote><font color="#0b5394">Instant messaging: </font><font color="#ff00ff"><a href="https://teams.microsoft.com/l/chat/0/0?users=lirakliotis@luc.edu" style="color:rgb(17,85,204)" target="_blank"><b>Teams</b></a></font><b><font color="#000000"> | </font></b><font color="#b45f06">Student hours: </font><a href="https://calendly.com/leo_irakliotis/20min" style="color:rgb(17,85,204)" target="_blank"><b>Calendly</b></a><b><font color="#000000"> | </font></b><font color="#990000">Course</font><br><font color="#990000">Documentation:</font><span style="color:rgb(34,34,34)"> </span><a href="https://lgreco.github.io/cdp/" style="color:rgb(17,85,204)" target="_blank"><b>GitHub</b></a><b><font color="#000000"> | </font></b><font color="#9900ff">Feedback:</font> <b><a href="https://docs.google.com/forms/d/e/1FAIpQLSfbbQkdO0buLZp17udHjphZYgZwkcZBgp3Tx6k0f6iMV_TykQ/viewform?usp=sf_link" style="color:rgb(17,85,204)" target="_blank">anonymous/confidential<br></a></b><blockquote style="margin:0px 0px 0px 40px;border:none;padding:0px"></blockquote><b style="color:rgb(68,68,68);font-family:&quot;times new roman&quot;,serif">ir</b><span style="color:rgb(68,68,68);font-family:&quot;times new roman&quot;,serif">-</span><b style="color:rgb(68,68,68);font-family:&quot;times new roman&quot;,serif">ak</b><span style="color:rgb(68,68,68);font-family:&quot;times new roman&quot;,serif">-</span><b style="color:rgb(68,68,68);font-family:&quot;times new roman&quot;,serif">li</b><span style="color:rgb(68,68,68);font-family:&quot;times new roman&quot;,serif">-</span><b style="color:rgb(68,68,68);font-family:&quot;times new roman&quot;,serif">otis: </b><span style="color:rgb(68,68,68);font-family:&quot;times new roman&quot;,serif"><b>ir</b>rigation - bed<b>rock</b> - <b>leap</b> - <b>Otis</b> Redding</span></blockquote><div><br></div></div></div></div></div>'''
+
+# Plain-text equivalent of the signature above, for the text/plain part of
+# the message (email clients that don't render the HTML alternative).
+SIGNATURE_PLAIN = """--
+Leo Irakliotis
+Department of Computer Science | Loyola University Chicago
+Instant messaging (Teams): https://teams.microsoft.com/l/chat/0/0?users=lirakliotis@luc.edu
+Student hours (Calendly): https://calendly.com/leo_irakliotis/20min
+Course Documentation (GitHub): https://lgreco.github.io/cdp/
+Feedback (anonymous/confidential): https://docs.google.com/forms/d/e/1FAIpQLSfbbQkdO0buLZp17udHjphZYgZwkcZBgp3Tx6k0f6iMV_TykQ/viewform?usp=sf_link"""
+
+
+def read_recipient_list(path):
+    """Read one email address per line from a roster file, skipping blank
+    lines and lines starting with `#`.
+
+    The `#`-comment support is there so I can leave a placeholder or a
+    note in a roster file (like "# TODO: replace with real COMP 170
+    roster") without it accidentally being treated as a real email
+    address and causing the send to fail.
+    """
+    addresses = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            addresses.append(line)
+    return addresses
+
+
+def send_summary_email(sender_address, app_password, recipients, course_label, date_str, summary_markdown, reply_to=None):
+    """Email the given summary to every address in `recipients`, BCC'd, so
+    students can't see each other's email addresses.
+
+    A few implementation notes:
+
+    - `course_label` is the short form ("COMP 170"), not the full
+      catalog name — it's what shows up in the subject line and the
+      heading at the top of the body, so it should read like something a
+      student expects to see in their inbox, not a course-catalog
+      description.
+    - `reply_to`, if given, sets the `Reply-To` header so student replies
+      go to a different address (leo@cs.luc.edu) than the one that sent
+      the message (lgreco@gmail.com). This is unrelated to — and doesn't
+      carry the DKIM/DMARC risk of — spoofing the `From` header (see the
+      module docstring above): `Reply-To` doesn't participate in sender
+      authentication at all, it's just a hint mail clients follow when
+      the user clicks "Reply". So this is safe to set even though sending
+      *as* leo@cs.luc.edu isn't (yet).
+    - If the roster is empty, we skip sending entirely rather than
+      calling sendmail() with no recipients (which would either error or
+      silently do nothing useful) — this also doubles as a safety valve
+      during testing, since an empty or placeholder roster just means
+      "no email goes out" instead of accidentally emailing nobody-knows-
+      who.
+    - Sent as `multipart/alternative` with both a plain-text part (the
+      raw Markdown — still readable as text: "# Heading" lines, "- item"
+      bullets) and an HTML part (the Markdown rendered properly, since
+      Gmail and most clients don't render Markdown syntax on their own).
+      Per RFC 2046, the "best" alternative goes last, so the HTML part is
+      attached after the plain-text one — clients that can render HTML
+      show that; clients that can't fall back to the plain-text part.
+    - The visible "To" header is set to the sender's own address, not the
+      real recipient list. The actual student addresses are passed to
+      `server.sendmail()` as the envelope recipients, which is how BCC
+      works at the SMTP level: those addresses receive the message, but
+      they're never written into a header that other recipients could
+      see. This is the whole reason recipients don't get to see the rest
+      of the class's email addresses.
+    """
+    if not recipients:
+        print(f"No recipients configured for {course_label}; skipping email send.")
+        return
+
+    subject = f"{course_label} - {date_str} class meeting summary"
+    plain_body = f"{subject}\n\n{summary_markdown}\n\n{CLOSING_NOTE}\n\n{SIGNATURE_PLAIN}"
+    summary_html = markdown.markdown(summary_markdown, extensions=["extra"])
+    html_body = (
+        f"<html><body><h2>{subject}</h2>{summary_html}"
+        f"<p>{CLOSING_NOTE}</p>{SIGNATURE_HTML}</body></html>"
+    )
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = sender_address
+    msg["To"] = sender_address  # visible "To" is just the sender; real recipients are BCC'd via sendmail()
+    if reply_to:
+        msg["Reply-To"] = reply_to
+    msg.attach(MIMEText(plain_body, "plain", "utf-8"))
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
+
+    # STARTTLS on port 587 is Gmail's standard "upgrade a plain
+    # connection to an encrypted one" flow — the connection starts
+    # unencrypted and server.starttls() switches it over before any
+    # credentials or message content go over the wire.
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+        server.starttls()
+        # This is an App Password, not the actual Gmail account
+        # password — Google requires App Passwords for SMTP login like
+        # this once 2-Step Verification is turned on, which is also just
+        # generally the safer credential to hand to an automated script
+        # since it can be revoked independently of the main account
+        # password.
+        server.login(sender_address, app_password)
+        server.sendmail(sender_address, recipients, msg.as_string())
+
+    print(f"Sent summary email for {course_label} to {len(recipients)} recipient(s).")

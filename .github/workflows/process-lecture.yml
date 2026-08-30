@@ -1,0 +1,120 @@
+name: Process Lecture Recording
+
+on:
+  push:
+    branches: [main]
+  # Upload Lecture From Link (the phone-only upload path) pushes its
+  # downloaded recording using the default GITHUB_TOKEN, and GitHub
+  # deliberately doesn't let a GITHUB_TOKEN-authored push re-trigger an
+  # on:push workflow (the same loop-prevention rule that already lets
+  # *this* workflow's own commit-back not re-trigger itself -- see
+  # planning_summary.md). So a push-only trigger here would silently
+  # never process a link-uploaded recording. workflow_run picks up the
+  # slack: it fires once that workflow finishes, regardless of which
+  # token did the pushing.
+  workflow_run:
+    workflows: ["Upload Lecture From Link"]
+    types: [completed]
+  # Manual escape hatch: re-scan and process whatever's currently sitting
+  # at the repo root, for the rare case a recording lands on main without
+  # either trigger above actually firing (e.g. this workflow's own logic
+  # changed after the file was already pushed).
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: process-lecture
+  cancel-in-progress: false
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    # For the workflow_run trigger, only proceed if the upload actually
+    # succeeded -- a failed upload (bad link, etc.) has nothing new on
+    # main to process.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          lfs: true
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Detect matched recordings
+        id: detect
+        run: |
+          set -euo pipefail
+          EVENT_NAME="${{ github.event_name }}"
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.event.after }}"
+          FORCED="${{ github.event.forced }}"
+
+          if [ "$EVENT_NAME" = "workflow_run" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # No before/after diff is available for either of these event
+            # types (that context only exists on push events) -- but a
+            # root listing is cheap and safe: only files still sitting at
+            # the repo root can possibly match a course code (a
+            # successfully processed recording gets git mv'd out of the
+            # root by process_lecture.py), so this can't accidentally
+            # reprocess something already filed away.
+            echo "Triggered by $EVENT_NAME -- using root listing"
+            CHANGED=$(git ls-tree --name-only HEAD -- .)
+          elif [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || [ "$FORCED" = "true" ]; then
+            echo "Using root listing (first push or force-push, diff isn't reliable here)"
+            CHANGED=$(git ls-tree --name-only HEAD -- .)
+          else
+            CHANGED=$(git diff --name-only "$BEFORE" "$AFTER" -- . || true)
+          fi
+
+          MATCHES=""
+          for f in $CHANGED; do
+            case "$f" in
+              */*) continue ;;  # only root-level files
+            esac
+            [ -f "$f" ] || continue
+            base="${f%.*}"
+            case "$base" in
+              comp170|comp271|comp363)
+                MATCHES="$MATCHES $f"
+                ;;
+            esac
+          done
+
+          echo "matches=$MATCHES" >> "$GITHUB_OUTPUT"
+          echo "Matched files:$MATCHES"
+
+      - name: Process each matched recording
+        if: steps.detect.outputs.matches != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for f in ${{ steps.detect.outputs.matches }}; do
+            course_code="${f%.*}"
+            echo "::group::Processing $f as $course_code"
+            python scripts/process_lecture.py "$course_code" "$f"
+            echo "::endgroup::"
+          done
