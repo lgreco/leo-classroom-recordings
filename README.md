@@ -1,22 +1,20 @@
 # Classroom Recordings Pipeline — Public Mirror
 
 This is a **read-only mirror**, auto-synced from a private production repo,
-publishing the actual code and prompts behind how my class meeting summaries get
-made and emailed to students. It exists purely for transparency — so that students can see
+publishing the actual code and prompts behind how my lecture summaries get
+made and emailed to you. It exists purely for transparency — so you can see
 exactly what runs, with no black box in between.
 
 **What's here:** every script and every AI prompt the pipeline uses.
-
 **What's not here (deliberately):** student rosters/email addresses, actual
 lecture recordings/transcripts/summaries, and any account credentials or
 infrastructure identifiers (AWS account IDs, bucket names, etc.). Those all
 stay in the private repo and are never synced here. This repo can't be used
 to run the pipeline as-is — it's for reading, not deploying.
 
-
 ## What the pipeline does
 
-1. I record the class meeting audio on my phone and drop it into the private repo,
+1. I record a lecture on my phone and drop it into the private repo,
    renamed to the course code (e.g. `comp170.m4a`).
 2. GitHub Actions picks it up, uploads it to AWS Transcribe with speaker
    diarization (`transcribe_aws.py`), and treats whichever speaker talked

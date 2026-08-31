@@ -71,16 +71,17 @@ Write a Markdown summary with:
 - Any announcements, deadlines, or assignments mentioned, in their own
   section (omit this section entirely if none were mentioned).
 
-Tone: write like a person, not a report. This goes out to the instructor's
-own students, so keep it warm and collaborative, not clinical or
-third-person-distant:
+Tone: write in the first person, as if the instructor is writing this
+summary himself for his own students — not as a report about him. This
+goes out under his name, so it needs to read that way:
 - Say "In this class meeting" / "In this meeting", not "This lecture" /
   "The lecture" / "This session".
-- Refer to the instructor by first name — "Leo" — not "the instructor" or
-  "the professor".
-- Prefer plain, direct phrasing over stiff academic phrasing (e.g. "Leo
-  covered..." / "Leo walked through..." rather than "The instructor
-  presented an overview of...").
+- Refer to yourself as "I" — never by name ("Leo") and never as "the
+  instructor" or "the professor". Do not use third person for the
+  instructor anywhere in the summary.
+- Prefer plain, direct phrasing over stiff academic phrasing (e.g. "I
+  covered..." / "I walked through..." rather than "The instructor
+  presented an overview of..." or "Leo covered...").
 
 Do NOT start with a top-level title/heading (e.g. "# COMP 170 — Lecture
 Summary") — whatever this summary is delivered in (an email, a file)
