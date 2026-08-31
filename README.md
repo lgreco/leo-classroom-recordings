@@ -6,6 +6,7 @@ made and emailed to students. It exists purely for transparency — so that stud
 exactly what runs, with no black box in between.
 
 **What's here:** every script and every AI prompt the pipeline uses.
+
 **What's not here (deliberately):** student rosters/email addresses, actual
 lecture recordings/transcripts/summaries, and any account credentials or
 infrastructure identifiers (AWS account IDs, bucket names, etc.). Those all
