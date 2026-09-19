@@ -101,7 +101,17 @@ def commit_and_push(paths, message):
     run_git("push")
 
 
-def process_recording(course_code, audio_path):
+def cleanup_s3(s3, s3_bucket, s3_key, output_key):
+    """Best-effort delete of this run's temporary S3 objects (see the
+    housekeeping note in process_recording)."""
+    try:
+        s3.delete_object(Bucket=s3_bucket, Key=s3_key)
+        s3.delete_object(Bucket=s3_bucket, Key=output_key)
+    except Exception as exc:  # cleanup is best-effort; bucket lifecycle rule is the backstop
+        print(f"Warning: failed to clean up S3 objects: {exc}")
+
+
+def process_recording(course_code, audio_path, test_mode=False):
     """Run the full pipeline for one recording: this is the heart of the
     whole project, so I'm walking through it step by step below.
 
@@ -137,6 +147,9 @@ def process_recording(course_code, audio_path):
         cleanup fails for some reason, the S3 bucket's lifecycle rule is
         the backstop that will eventually expire them anyway).
     """
+    # Test mode (course code "test"): do everything except touch the repo
+    # (no git mv/commit/push, nothing filed away) and email only
+    # GMAIL_ADDRESS, with the transcript attached, never a student roster.
     courses = load_courses()
     if course_code not in courses:
         # Defensive check — in practice the GitHub Actions workflow only
@@ -216,6 +229,21 @@ def process_recording(course_code, audio_path):
         claude, cleaned_transcript, course["name"], course["description"]
     )
 
+    if test_mode:
+        course_label = "TEST"
+        send_email.send_summary_email(
+            sender_address=os.environ["GMAIL_ADDRESS"],
+            app_password=os.environ["GMAIL_APP_PASSWORD"],
+            recipients=[os.environ["GMAIL_ADDRESS"]],
+            course_label=course_label,
+            date_str=date_str,
+            summary_markdown=summary_markdown,
+            subject_prefix="[TEST] ",
+            attachments=[(f"{date_str}-transcript.txt", cleaned_transcript)],
+        )
+        cleanup_s3(s3, s3_bucket, s3_key, output_key)
+        return
+
     course_folder = os.path.join(REPO_ROOT, course["folder"])
     os.makedirs(course_folder, exist_ok=True)
 
@@ -269,11 +297,7 @@ def process_recording(course_code, audio_path):
     # after the email has already gone out. The S3 bucket also has a
     # lifecycle rule that expires objects after a couple of days as a
     # backstop, in case this cleanup never runs at all.
-    try:
-        s3.delete_object(Bucket=s3_bucket, Key=s3_key)
-        s3.delete_object(Bucket=s3_bucket, Key=output_key)
-    except Exception as exc:  # cleanup is best-effort; bucket lifecycle rule is the backstop
-        print(f"Warning: failed to clean up S3 objects: {exc}")
+    cleanup_s3(s3, s3_bucket, s3_key, output_key)
 
 
 def main():
@@ -287,7 +311,7 @@ def main():
     parser.add_argument("course_code")
     parser.add_argument("audio_path")
     args = parser.parse_args()
-    process_recording(args.course_code, args.audio_path)
+    process_recording(args.course_code, args.audio_path, test_mode=args.course_code == "test")
 
 
 if __name__ == "__main__":

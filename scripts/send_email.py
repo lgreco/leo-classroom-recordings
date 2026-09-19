@@ -23,6 +23,7 @@ rewriting this file.
 """
 
 import smtplib
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -95,7 +96,7 @@ def read_recipient_list(path):
     return addresses
 
 
-def send_summary_email(sender_address, app_password, recipients, course_label, date_str, summary_markdown, reply_to=None):
+def send_summary_email(sender_address, app_password, recipients, course_label, date_str, summary_markdown, reply_to=None, subject_prefix="", attachments=None):
     """Email the given summary to every address in `recipients`, BCC'd, so
     students can't see each other's email addresses.
 
@@ -114,6 +115,10 @@ def send_summary_email(sender_address, app_password, recipients, course_label, d
       authentication at all, it's just a hint mail clients follow when
       the user clicks "Reply". So this is safe to set even though sending
       *as* leo@cs.luc.edu isn't (yet).
+    - `subject_prefix` (e.g. "[TEST] ") is prepended to the subject, and
+      `attachments` is an optional list of (filename, text) pairs attached
+      as plain-text files. Both exist for the pipeline's test mode; real
+      course sends leave them at their defaults.
     - If the roster is empty, we skip sending entirely rather than
       calling sendmail() with no recipients (which would either error or
       silently do nothing useful) — this also doubles as a safety valve
@@ -139,7 +144,7 @@ def send_summary_email(sender_address, app_password, recipients, course_label, d
         print(f"No recipients configured for {course_label}; skipping email send.")
         return
 
-    subject = f"{course_label} - {date_str} class meeting summary"
+    subject = f"{subject_prefix}{course_label} - {date_str} class meeting summary"
     plain_body = (
         f"{subject}\n\n{DISCLOSURE_PLAIN}\n\n{summary_markdown}\n\n"
         f"{CLOSING_NOTE}\n\n{SIGNATURE_PLAIN}"
@@ -150,14 +155,24 @@ def send_summary_email(sender_address, app_password, recipients, course_label, d
         f"<p>{CLOSING_NOTE}</p>{SIGNATURE_HTML}</body></html>"
     )
 
-    msg = MIMEMultipart("alternative")
+    # An attachment needs a multipart/mixed wrapper around the
+    # plain/HTML alternative pair; without attachments, keep the
+    # original flat multipart/alternative message unchanged.
+    alternative = MIMEMultipart("alternative")
+    msg = MIMEMultipart("mixed") if attachments else alternative
     msg["Subject"] = subject
     msg["From"] = sender_address
     msg["To"] = sender_address  # visible "To" is just the sender; real recipients are BCC'd via sendmail()
     if reply_to:
         msg["Reply-To"] = reply_to
-    msg.attach(MIMEText(plain_body, "plain", "utf-8"))
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
+    alternative.attach(MIMEText(plain_body, "plain", "utf-8"))
+    alternative.attach(MIMEText(html_body, "html", "utf-8"))
+    if attachments:
+        msg.attach(alternative)
+        for filename, text in attachments:
+            part = MIMEApplication(text.encode("utf-8"), Name=filename)
+            part["Content-Disposition"] = f'attachment; filename="{filename}"'
+            msg.attach(part)
 
     # STARTTLS on port 587 is Gmail's standard "upgrade a plain
     # connection to an encrypted one" flow — the connection starts

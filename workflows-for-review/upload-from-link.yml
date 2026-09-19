@@ -13,12 +13,13 @@ on:
   workflow_dispatch:
     inputs:
       course_code:
-        description: "Course"
+        description: "Course (\"test\" emails only lgreco@gmail.com and commits nothing)"
         type: choice
         options:
           - comp170
           - comp271
           - comp363
+          - test
         required: true
       audio_url:
         description: "Shareable link to the recording (e.g. Google Drive, set to \"Anyone with the link\")"
@@ -79,9 +80,16 @@ jobs:
           EXTENSION: ${{ inputs.extension }}
         run: |
           set -euo pipefail
-          python scripts/download_from_link.py "$AUDIO_URL" "$COURSE_CODE.$EXTENSION"
+          # Test mode keeps the file out of the repo checkout entirely.
+          if [ "$COURSE_CODE" = "test" ]; then
+            DEST="$RUNNER_TEMP/test.$EXTENSION"
+          else
+            DEST="$COURSE_CODE.$EXTENSION"
+          fi
+          python scripts/download_from_link.py "$AUDIO_URL" "$DEST"
 
       - name: Commit and push recording
+        if: inputs.course_code != 'test'
         env:
           COURSE_CODE: ${{ inputs.course_code }}
           EXTENSION: ${{ inputs.extension }}
@@ -90,3 +98,20 @@ jobs:
           git add "$COURSE_CODE.$EXTENSION"
           git commit -m "Upload $COURSE_CODE recording via link"
           git push
+
+      - name: Install pipeline dependencies (test mode)
+        if: inputs.course_code == 'test'
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run test pipeline (email to self only, nothing committed)
+        if: inputs.course_code == 'test'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EXTENSION: ${{ inputs.extension }}
+        run: python scripts/process_lecture.py test "$RUNNER_TEMP/test.$EXTENSION"

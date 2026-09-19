@@ -16,5 +16,11 @@
     "name": "COMP 363 Design and Analysis of Algorithms",
     "description": "A more quantitatively oriented course in algorithm design and analysis. Topics include the Master Theorem for analyzing divide-and-conquer recurrences, graph algorithms and their Big-Theta behavior, dynamic programming, min-cut/max-flow, numerical methods and simulations, basic backpropagation, and predictive analytics applied to real-world datasets (e.g. sports data, police data).",
     "email_list": "comp363f26/comp363-emails.txt"
+  },
+  "test": {
+    "folder": "test",
+    "name": "TEST RUN (not a real course)",
+    "description": "A test run of the recording pipeline on an arbitrary audio clip. There is no real course here: summarize whatever was said as a general lecture-style summary, with no course-specific assumptions.",
+    "email_list": null
   }
 }
