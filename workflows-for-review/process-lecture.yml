@@ -100,6 +100,29 @@ jobs:
           echo "matches=$MATCHES" >> "$GITHUB_OUTPUT"
           echo "Matched files:$MATCHES"
 
+      - name: Delete already-processed recordings
+        # Runs before processing, so it only ever touches *earlier*
+        # recordings; the one being uploaded now is kept until the next
+        # upload. A recording counts as processed when its
+        # transcript (.txt) and summary (.md) exist alongside it.
+        if: steps.detect.outputs.matches != ''
+        run: |
+          set -euo pipefail
+          DELETED=0
+          for rec in */*-recording.*; do
+            [ -f "$rec" ] || continue
+            stem="${rec%-recording.*}"
+            if [ -f "$stem-transcript.txt" ] && [ -f "$stem-summary.md" ]; then
+              echo "Removing $rec"
+              git rm -q "$rec"
+              DELETED=$((DELETED + 1))
+            fi
+          done
+          if [ "$DELETED" -gt 0 ]; then
+            git commit -m "Remove $DELETED already-processed recording(s)"
+            git push
+          fi
+
       - name: Process each matched recording
         if: steps.detect.outputs.matches != ''
         env:
