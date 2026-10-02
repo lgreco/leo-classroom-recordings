@@ -23,6 +23,7 @@ rewriting this file.
 """
 
 import smtplib
+import time
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -31,6 +32,17 @@ import markdown
 
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
+
+# Gmail SMTP logins from GitHub Actions' shared, ephemeral runner IPs
+# intermittently come back as 535 "Username and Password not accepted"
+# or drop the connection outright, even with a valid App Password --
+# this is Google being cagey about the IP's reputation, not a bad
+# credential (confirmed 2026-10-02: two other courses authenticated
+# fine with the same secret in the same hour that a third attempt hit
+# this). A few retries with backoff is enough for the next run to land
+# on a runner IP Google is happy with.
+SMTP_RETRY_ATTEMPTS = 3
+SMTP_RETRY_DELAY_SECONDS = 20
 
 # Appended to every summary email — a student replying to ask a question
 # is exactly the outcome we want, so say so explicitly rather than just
@@ -178,15 +190,28 @@ def send_summary_email(sender_address, app_password, recipients, course_label, d
     # connection to an encrypted one" flow — the connection starts
     # unencrypted and server.starttls() switches it over before any
     # credentials or message content go over the wire.
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-        server.starttls()
-        # This is an App Password, not the actual Gmail account
-        # password — Google requires App Passwords for SMTP login like
-        # this once 2-Step Verification is turned on, which is also just
-        # generally the safer credential to hand to an automated script
-        # since it can be revoked independently of the main account
-        # password.
-        server.login(sender_address, app_password)
-        server.sendmail(sender_address, recipients, msg.as_string())
+    #
+    # Retried as a whole (new connection each attempt) rather than just
+    # the login call, since a dropped connection (SMTPServerDisconnected)
+    # can't be resumed -- see the SMTP_RETRY_ATTEMPTS comment above for
+    # why these failures are expected to be transient.
+    for attempt in range(1, SMTP_RETRY_ATTEMPTS + 1):
+        try:
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+                server.starttls()
+                # This is an App Password, not the actual Gmail account
+                # password — Google requires App Passwords for SMTP login
+                # like this once 2-Step Verification is turned on, which
+                # is also just generally the safer credential to hand to
+                # an automated script since it can be revoked
+                # independently of the main account password.
+                server.login(sender_address, app_password)
+                server.sendmail(sender_address, recipients, msg.as_string())
+            break
+        except (smtplib.SMTPAuthenticationError, smtplib.SMTPServerDisconnected, OSError):
+            if attempt == SMTP_RETRY_ATTEMPTS:
+                raise
+            print(f"SMTP send attempt {attempt} failed, retrying in {SMTP_RETRY_DELAY_SECONDS}s...")
+            time.sleep(SMTP_RETRY_DELAY_SECONDS)
 
     print(f"Sent summary email for {course_label} to {len(recipients)} recipient(s).")

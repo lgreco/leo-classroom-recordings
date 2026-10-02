@@ -1,0 +1,40 @@
+name: Resend Lecture Email
+
+# Manual-only: for the case where process-lecture.yml got through
+# transcription/summarization/commit but failed on the email step (e.g.
+# a transient Gmail SMTP rejection -- see send_email.py). Re-sends the
+# summary that's already sitting in the course folder, without redoing
+# any of the AWS/Claude work.
+on:
+  workflow_dispatch:
+    inputs:
+      course_code:
+        description: "Course code, e.g. comp170"
+        required: true
+      date_str:
+        description: "Lecture date, YYYY-MM-DD, matching the existing <date>-summary.md"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  resend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Resend
+        env:
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: python scripts/resend_email.py "${{ inputs.course_code }}" "${{ inputs.date_str }}"
