@@ -229,6 +229,14 @@ def process_recording(course_code, audio_path, test_mode=False):
         claude, cleaned_transcript, course["name"], course["description"]
     )
 
+    # Optional instructor note: a root-level lecture-note-<course>.md is
+    # appended to the summary (and then filed away with it).
+    note_path = os.path.join(REPO_ROOT, f"lecture-note-{course_code}.md")
+    if os.path.isfile(note_path):
+        with open(note_path, encoding="utf-8") as f:
+            summary_markdown = summary_markdown.rstrip() + "\n\n" + f.read().strip() + "\n"
+        run_git("rm", "-f", "-q", os.path.relpath(note_path, REPO_ROOT))
+
     if test_mode:
         course_label = "TEST"
         send_email.send_summary_email(
