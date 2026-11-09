@@ -37,11 +37,6 @@ on:
           - ogg
         default: m4a
         required: true
-      student_discussion_topic:
-        description: "Optional: a class discussion topic (e.g. \"AI in the classroom\") -- if set, the summary also captures what students said about it"
-        type: string
-        required: false
-        default: ""
 
 permissions:
   contents: write
@@ -93,19 +88,6 @@ jobs:
           fi
           python scripts/download_from_link.py "$AUDIO_URL" "$DEST"
 
-      - name: Record student-discussion topic (if any)
-        # The topic rides along as a root-level student-discussion-<course>.txt,
-        # the same way lecture-note-<course>.md does: the follow-on
-        # process-lecture run (triggered via workflow_run, so it gets no
-        # inputs) finds it in the repo, uses it, and deletes it.
-        if: inputs.student_discussion_topic != ''
-        env:
-          COURSE_CODE: ${{ inputs.course_code }}
-          TOPIC: ${{ inputs.student_discussion_topic }}
-        run: |
-          set -euo pipefail
-          printf '%s\n' "$TOPIC" > "student-discussion-$COURSE_CODE.txt"
-
       - name: Commit and push recording
         if: inputs.course_code != 'test'
         env:
@@ -114,9 +96,6 @@ jobs:
         run: |
           set -euo pipefail
           git add "$COURSE_CODE.$EXTENSION"
-          if [ -f "student-discussion-$COURSE_CODE.txt" ]; then
-            git add "student-discussion-$COURSE_CODE.txt"
-          fi
           git commit -m "Upload $COURSE_CODE recording via link"
           git push
 
