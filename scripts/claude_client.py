@@ -94,6 +94,33 @@ weren't discussed. Output only the Markdown summary, no preamble.
 """
 
 
+# Third call, only when I supply a discussion topic: pull the students'
+# contributions on that topic out of the non-instructor speech. Students
+# are never identified; the output is a summary section that gets
+# appended to the emailed summary.
+_STUDENT_DISCUSSION_SYSTEM_PROMPT = """\
+You will be given (1) a class-discussion topic and (2) the raw, automatically
+diarized speech of everyone in a classroom recording EXCEPT the instructor,
+as turns like "[Speaker 2 @ 41:07] ...". Diarization is imperfect: speakers
+may be merged or split, words may be wrong, and many turns will be unrelated
+to the topic (side conversation, logistics, questions on other material).
+
+Write a short Markdown section titled "## Student Voices: <topic>" that
+captures what students actually said about the topic:
+- Group the points into a few bullets by viewpoint or theme. Where a student
+  stated something vividly, include a brief, lightly cleaned direct quote.
+- Write in first person as the instructor ("Several of you said...").
+- NEVER name or identify students, and don't use "Speaker N" labels in the
+  output; attribute only as "one student", "a few of you", etc.
+- Use ONLY what is supported by the text. Do not invent views, and do not
+  include material unrelated to the topic. Skip fragments that are too
+  garbled to trust.
+- If there is nothing usable about the topic, output exactly: NONE
+
+Output only the Markdown section (or NONE), no preamble.
+"""
+
+
 def _run(client, system_prompt, user_content):
     """Shared plumbing for both Claude calls: stream the request and
     concatenate the returned text blocks into a single string.
@@ -165,6 +192,16 @@ def summarize(client, cleaned_transcript, course_name, course_description):
         f"Transcript:\n{cleaned_transcript}"
     )
     return _run(client, _SUMMARY_SYSTEM_PROMPT, user_content)
+
+
+def extract_student_discussion(client, other_speakers_text, topic):
+    """Third Claude call: summarize what students said about `topic`.
+    Returns a Markdown section, or "" if nothing usable was found."""
+    if not other_speakers_text.strip():
+        return ""
+    user_content = f"Topic: {topic}\n\nNon-instructor speech:\n{other_speakers_text}"
+    result = _run(client, _STUDENT_DISCUSSION_SYSTEM_PROMPT, user_content).strip()
+    return "" if result == "NONE" else result
 
 
 def make_client():

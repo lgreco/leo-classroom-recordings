@@ -237,6 +237,28 @@ def process_recording(course_code, audio_path, test_mode=False):
             summary_markdown = summary_markdown.rstrip() + "\n\n" + f.read().strip() + "\n"
         run_git("rm", "-f", "-q", os.path.relpath(note_path, REPO_ROOT))
 
+    # Optional student-voices section: a root-level
+    # student-discussion-<course>.txt (written by the Upload From Link
+    # workflow) holds a discussion topic. Best-effort -- if diarization
+    # can't separate students, the summary is simply left as is.
+    topic_path = os.path.join(REPO_ROOT, f"student-discussion-{course_code}.txt")
+    if os.path.isfile(topic_path):
+        with open(topic_path, encoding="utf-8") as f:
+            topic = f.read().strip()
+        if topic:
+            print(f"Extracting student discussion on: {topic}")
+            others = transcribe_aws.isolate_other_speakers_transcript(transcript_json)
+            section = claude_client.extract_student_discussion(claude, others, topic)
+            if section:
+                summary_markdown = summary_markdown.rstrip() + "\n\n" + section.strip() + "\n"
+            else:
+                print("No usable student speech found on that topic; skipping section.")
+        if subprocess.run(["git", "ls-files", "--error-unmatch", os.path.relpath(topic_path, REPO_ROOT)],
+                          cwd=REPO_ROOT, capture_output=True).returncode == 0:
+            run_git("rm", "-f", "-q", os.path.relpath(topic_path, REPO_ROOT))
+        else:
+            os.remove(topic_path)
+
     if test_mode:
         course_label = "TEST"
         send_email.send_summary_email(

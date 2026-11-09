@@ -194,3 +194,53 @@ def isolate_primary_speaker_transcript(transcript_json):
             words[-1] = words[-1] + content
 
     return " ".join(words)
+
+
+def isolate_other_speakers_transcript(transcript_json):
+    """Return everyone *except* the instructor as labelled turns, e.g.
+    "[Speaker 2 @ 41:07] I think AI tutors are fine as long as...".
+
+    Counterpart to isolate_primary_speaker_transcript (same "most talk
+    time = instructor" heuristic). Consecutive words from one speaker are
+    grouped into a turn so Claude can see who said what, and the
+    timestamp helps me spot-check a quote against the recording. Returns
+    "" when there's no diarization or only one speaker was detected.
+
+    Diarization is imperfect with a room mic: quiet or distant students
+    may be merged into the instructor's label or dropped entirely, so
+    treat this as best-effort.
+    """
+    results = transcript_json["results"]
+    segments = results.get("speaker_labels", {}).get("segments", [])
+    talk_time = {}
+    for segment in segments:
+        duration = float(segment["end_time"]) - float(segment["start_time"])
+        talk_time[segment["speaker_label"]] = talk_time.get(segment["speaker_label"], 0.0) + duration
+    if len(talk_time) < 2:
+        return ""
+    primary = max(talk_time, key=talk_time.get)
+
+    turns = []  # [speaker, start_seconds, [tokens]]
+    for item in results["items"]:
+        speaker = item.get("speaker_label")
+        content = item["alternatives"][0]["content"]
+        if item["type"] == "pronunciation":
+            if speaker is None or speaker == primary:
+                turns.append(None)  # instructor word: breaks any student turn
+                continue
+            if turns and turns[-1] is not None and turns[-1][0] == speaker:
+                turns[-1][2].append(content)
+            else:
+                turns.append([speaker, float(item["start_time"]), [content]])
+        elif item["type"] == "punctuation" and turns and turns[-1] is not None:
+            turns[-1][2][-1] += content
+
+    lines = []
+    for turn in turns:
+        if turn is None:
+            continue
+        speaker, start, tokens = turn
+        n = int(speaker.rsplit("_", 1)[-1]) + 1 if speaker.rsplit("_", 1)[-1].isdigit() else speaker
+        minutes, seconds = divmod(int(start), 60)
+        lines.append(f"[Speaker {n} @ {minutes}:{seconds:02d}] {' '.join(tokens)}")
+    return "\n".join(lines)
